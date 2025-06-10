@@ -1,33 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Button, StyleSheet } from 'react-native'; // Added Button for Logout
+import { View, Text, Button, ActivityIndicator, StyleSheet } from 'react-native'; // StyleSheet might be needed if not already there
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack'; // For Auth flow
 
 import DashboardScreen from './src/screens/DashboardScreen';
-import ProfileScreen from './src/screens/ProfileScreen'; // Assuming this exists
-// import SettingsScreen from './src/screens/SettingsScreen'; // Will be redefined
+import ProfileScreen from './src/screens/ProfileScreen';
+// SettingsScreen is defined inline or imported
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import FriendsScreen from './src/screens/FriendsScreen'; // New
+import AddFriendsScreen from './src/screens/AddFriendsScreen'; // New
+import FriendRequestsScreen from './src/screens/FriendRequestsScreen'; // New
 
 import authService from './src/services/authService';
-import { ActivityIndicator } from 'react-native'; // For loading state
 
 const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator();
+const AuthStack = createNativeStackNavigator(); // For Auth flow
+const FriendsStackNav = createNativeStackNavigator(); // New Stack for Friends Tab
 
-// Define SettingsScreen here or import if it's complex
+// SettingsScreen (can be kept inline or moved to its own file)
 const SettingsScreen = ({ onLogout }) => ( // Pass onLogout callback
-  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+  <View style={styles.centeredScreen}>
     <Text>Settings Screen</Text>
     <Button title="Logout" onPress={onLogout} />
   </View>
 );
 
+// Friends Stack Navigator
+function FriendsStackNavigator() {
+  return (
+    <FriendsStackNav.Navigator
+      screenOptions={{
+        // Common header styling for the Friends stack can go here
+        // headerStyle: { backgroundColor: '#f4511e' },
+        // headerTintColor: '#fff',
+        // headerTitleStyle: { fontWeight: 'bold' },
+      }}
+    >
+      <FriendsStackNav.Screen
+        name="FriendsList"
+        component={FriendsScreen}
+        options={{ title: 'My Friends' }}
+      />
+      <FriendsStackNav.Screen
+        name="AddFriends"
+        component={AddFriendsScreen}
+        options={{ title: 'Add Friends' }}
+      />
+      <FriendsStackNav.Screen
+        name="FriendRequests"
+        component={FriendRequestsScreen}
+        options={{ title: 'Friend Requests' }}
+      />
+    </FriendsStackNav.Navigator>
+  );
+}
 
+// Main App Component
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true); // To check initial auth state
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const checkAuthStatus = async () => {
@@ -42,28 +75,10 @@ const App = () => {
       }
     };
     checkAuthStatus();
+  }, []);
 
-    // Optional: Listener for auth changes if authService emits events
-    // This is a simplified way; a context or global state manager (Redux, Zustand) is better for complex apps
-    // For this example, we'll rely on re-rendering triggered by successful login/logout
-    // causing a re-evaluation of isAuthenticated state (e.g. by restarting the app or a manual state update)
-    // A more robust solution would involve a global state/context that authService updates.
-    // For now, successful login/register in their respective screens should trigger a state update
-    // that causes App.js to re-evaluate. We will simulate this by making onLoginSuccess/onRegisterSuccess
-    // in LoginScreen/RegisterScreen update a global state or call a function passed down from App.js
-    // that sets setIsAuthenticated(true).
-    // Let's simplify: Login/Register screens will now call a passed down function.
-
-  }, []); // Check only on mount initially
-
-  const handleLoginSuccess = () => {
-    setIsAuthenticated(true);
-  };
-
-  const handleRegisterSuccess = () => {
-    setIsAuthenticated(true);
-  };
-
+  const handleLoginSuccess = () => setIsAuthenticated(true);
+  const handleRegisterSuccess = () => setIsAuthenticated(true);
   const handleLogout = async () => {
     setIsLoading(true);
     await authService.logout();
@@ -71,11 +86,10 @@ const App = () => {
     setIsLoading(false);
   };
 
-
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" />
+      <View style={styles.centeredScreen}>
+        <ActivityIndicator size="large" color="#007bff" />
         <Text>Loading...</Text>
       </View>
     );
@@ -85,37 +99,46 @@ const App = () => {
     <NavigationContainer>
       {isAuthenticated ? (
         <Tab.Navigator
-          screenOptions={({ route }) => ({
+          screenOptions={{
             tabBarActiveTintColor: '#1e90ff',
             tabBarInactiveTintColor: 'gray',
-            // Example: using a function for tabBarIcon
-            // tabBarIcon: ({ focused, color, size }) => {
-            //   let iconName;
-            //   if (route.name === 'Dashboard') iconName = focused ? 'ios-information-circle' : 'ios-information-circle-outline';
-            //   else if (route.name === 'Profile') iconName = focused ? 'ios-person' : 'ios-person-outline';
-            //   else if (route.name === 'Settings') iconName = focused ? 'ios-settings' : 'ios-settings-outline';
-            //   return <Ionicons name={iconName} size={size} color={color} />; // Assuming Ionicons
-            // },
-          })}
+            // headerShown: false, // Use this if each stack/screen manages its own header
+          }}
         >
           <Tab.Screen name="Dashboard" component={DashboardScreen} />
+          <Tab.Screen
+            name="FriendsTab" // Changed name to avoid conflict with screen name 'Friends'
+            component={FriendsStackNavigator}
+            options={{
+              title: 'Friends', // Title for the tab
+              headerShown: false // Important: Hide Tab Nav header, let Stack Nav handle it
+            }}
+          />
           <Tab.Screen name="Profile" component={ProfileScreen} />
           <Tab.Screen name="Settings">
             {props => <SettingsScreen {...props} onLogout={handleLogout} />}
           </Tab.Screen>
         </Tab.Navigator>
       ) : (
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Login">
+        <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+          <AuthStack.Screen name="Login">
             {props => <LoginScreen {...props} onLoginSuccess={handleLoginSuccess} />}
-          </Stack.Screen>
-          <Stack.Screen name="Register">
+          </AuthStack.Screen>
+          <AuthStack.Screen name="Register">
             {props => <RegisterScreen {...props} onRegisterSuccess={handleRegisterSuccess} />}
-          </Stack.Screen>
-        </Stack.Navigator>
+          </AuthStack.Screen>
+        </AuthStack.Navigator>
       )}
     </NavigationContainer>
   );
 };
+
+const styles = StyleSheet.create({ // Added StyleSheet for consistency
+  centeredScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
+});
 
 export default App;
