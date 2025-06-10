@@ -1,43 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Button, ActivityIndicator, StyleSheet } from 'react-native'; // StyleSheet might be needed if not already there
+import { View, Text, Button, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createNativeStackNavigator } from '@react-navigation/native-stack'; // For Auth flow
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import DashboardScreen from './src/screens/DashboardScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
-// SettingsScreen is defined inline or imported
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
-import FriendsScreen from './src/screens/FriendsScreen'; // New
-import AddFriendsScreen from './src/screens/AddFriendsScreen'; // New
-import FriendRequestsScreen from './src/screens/FriendRequestsScreen'; // New
+import FriendsScreen from './src/screens/FriendsScreen';
+import AddFriendsScreen from './src/screens/AddFriendsScreen';
+import FriendRequestsScreen from './src/screens/FriendRequestsScreen';
+import SocialFeedScreen from './src/screens/SocialFeedScreen'; // New import
 
 import authService from './src/services/authService';
 
 const Tab = createBottomTabNavigator();
-const AuthStack = createNativeStackNavigator(); // For Auth flow
-const FriendsStackNav = createNativeStackNavigator(); // New Stack for Friends Tab
+const AuthStack = createNativeStackNavigator();
+const FriendsStackNav = createNativeStackNavigator();
 
-// SettingsScreen (can be kept inline or moved to its own file)
-const SettingsScreen = ({ onLogout }) => ( // Pass onLogout callback
+const SettingsScreen = ({ onLogout }) => (
   <View style={styles.centeredScreen}>
     <Text>Settings Screen</Text>
     <Button title="Logout" onPress={onLogout} />
   </View>
 );
 
-// Friends Stack Navigator
 function FriendsStackNavigator() {
   return (
-    <FriendsStackNav.Navigator
-      screenOptions={{
-        // Common header styling for the Friends stack can go here
-        // headerStyle: { backgroundColor: '#f4511e' },
-        // headerTintColor: '#fff',
-        // headerTitleStyle: { fontWeight: 'bold' },
-      }}
-    >
+    <FriendsStackNav.Navigator>
       <FriendsStackNav.Screen
         name="FriendsList"
         component={FriendsScreen}
@@ -57,7 +48,6 @@ function FriendsStackNavigator() {
   );
 }
 
-// Main App Component
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -102,16 +92,27 @@ const App = () => {
           screenOptions={{
             tabBarActiveTintColor: '#1e90ff',
             tabBarInactiveTintColor: 'gray',
-            // headerShown: false, // Use this if each stack/screen manages its own header
+            // Example: Add common header styling for tabs if not using headerShown: false
+            // headerStyle: { backgroundColor: '#1e90ff' },
+            // headerTintColor: '#fff',
           }}
         >
+          <Tab.Screen
+            name="Feed"
+            component={SocialFeedScreen}
+            options={{
+              title: 'Feed',
+              // tabBarIcon: ({ color, size }) => ( /* Placeholder for Icon */ ),
+            }}
+          />
           <Tab.Screen name="Dashboard" component={DashboardScreen} />
           <Tab.Screen
-            name="FriendsTab" // Changed name to avoid conflict with screen name 'Friends'
+            name="FriendsTab"
             component={FriendsStackNavigator}
             options={{
-              title: 'Friends', // Title for the tab
-              headerShown: false // Important: Hide Tab Nav header, let Stack Nav handle it
+              title: 'Friends',
+              headerShown: false, // Let the stack navigator handle its own header
+              // tabBarIcon: ({ color, size }) => ( /* Placeholder for Icon */ ),
             }}
           />
           <Tab.Screen name="Profile" component={ProfileScreen} />
@@ -133,7 +134,7 @@ const App = () => {
   );
 };
 
-const styles = StyleSheet.create({ // Added StyleSheet for consistency
+const styles = StyleSheet.create({
   centeredScreen: {
     flex: 1,
     justifyContent: 'center',
