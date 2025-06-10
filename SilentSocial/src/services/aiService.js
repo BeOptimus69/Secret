@@ -49,6 +49,7 @@ const analyzeMoodFromData = (dailyData) => {
       summary: 'A focused day with moderate activity.',
       insights: ['Productive morning, maintained energy levels.'], // Slightly enhanced insight
       shareablePost: 'Feeling focused and getting things done today! #Productivity #FocusedEnergy', // Slightly enhanced post
+      date: new Date().toISOString(), // Added date field
     };
 
     console.log('aiService.analyzeMoodFromData returning mock analysis:', mockMoodAnalysis);
