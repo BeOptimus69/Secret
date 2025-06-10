@@ -1,132 +1,168 @@
-import React, {useState, useEffect, useCallback} from 'react';
-import {View, Text, Button, StyleSheet, ActivityIndicator, FlatList, ScrollView} from 'react-native';
-import {analyzeMoodFromData} from '../services/aiService';
-import {getMockDailyData, storeMoodAnalysis, getMoodHistory, clearAllMoodHistory} from '../services/dataService';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, Button, StyleSheet, FlatList, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import authService from '../services/authService'; // For user context if needed, though not directly used for data fetching here
+import aiService from '../services/aiService';
+import dataService from '../services/dataService';
 
-const DashboardScreen = () => {
-  const [moodAnalysis, setMoodAnalysis] = useState(null);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+const DashboardScreen = ({ navigation }) => {
+  const [currentMoodAnalysis, setCurrentMoodAnalysis] = useState(null); // Stores result of a new analysis
   const [moodHistory, setMoodHistory] = useState([]);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [error, setError] = useState('');
 
-  const fetchMoodHistory = useCallback(async () => {
-    setIsHistoryLoading(true);
+  // Pagination state for mood history
+  const [historyPage, setHistoryPage] = useState(1);
+  const [totalHistoryPages, setTotalHistoryPages] = useState(1);
+  const HISTORY_LIMIT = 7; // Items per page
+
+  const fetchMoodHistory = useCallback(async (page = 1) => {
+    setIsLoadingHistory(true);
+    setError(''); // Clear previous errors specific to history loading
     try {
-      const history = await getMoodHistory(); // Default limit is 7
-      setMoodHistory(history);
+      const response = await dataService.getMoodHistory(HISTORY_LIMIT, page);
+      if (response.success && response.data) {
+        // If page is 1, replace history, else append
+        setMoodHistory(prevHistory => page === 1 ? response.data : [...prevHistory, ...response.data]);
+        setHistoryPage(page);
+        if (response.pagination) {
+          setTotalHistoryPages(response.pagination.totalPages || 1);
+        }
+      } else {
+        setError(response.message || 'Failed to fetch mood history.');
+        // Alert.alert('Error', response.message || 'Failed to fetch mood history.');
+      }
     } catch (err) {
-      console.error("DashboardScreen: Failed to fetch mood history", err);
-      setError("Failed to load mood history."); // Optionally display this error
+      setError('An unexpected error occurred while fetching history.');
+      // Alert.alert('Error', 'An unexpected error occurred while fetching history.');
+      console.error('Fetch mood history error:', err);
     } finally {
-      setIsHistoryLoading(false);
+      setIsLoadingHistory(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchMoodHistory();
+    fetchMoodHistory(1); // Fetch initial page of history on mount
   }, [fetchMoodHistory]);
 
-  const handleAnalyzeMood = async () => {
-    setIsLoading(true);
+  const handleAnalyzeTodaysMood = async () => {
+    setIsLoadingAnalysis(true);
     setError('');
-    setMoodAnalysis(null);
-
-    const dailyData = getMockDailyData();
-
+    setCurrentMoodAnalysis(null);
     try {
-      const result = await analyzeMoodFromData(dailyData);
-      setMoodAnalysis(result);
-      await storeMoodAnalysis(result); // Ensure this is awaited
-      fetchMoodHistory(); // Refresh history
+      // 1. Get data to analyze (mocked for now, later from sensors)
+      const dataToAnalyze = dataService.getMockDailyData();
+      // Ensure dataToAnalyze includes a date, primaryMood, etc. as expected by backend via dataService.storeMoodAnalysis
+      // The `aiService` will now pass this to `dataService.storeMoodAnalysis` which syncs to backend.
+      const response = await aiService.analyzeMoodFromData(dataToAnalyze);
+
+      if (response.success && response.data) {
+        // response.data here is the data confirmed by the backend after sync.
+        setCurrentMoodAnalysis(response.data);
+        // Alert.alert('Analysis Synced', 'Your mood data has been synced with the server.');
+        // Refresh history to include the new entry
+        fetchMoodHistory(1); // Reset to page 1 to see the latest
+      } else {
+        setError(response.message || 'Failed to analyze and sync mood data.');
+        Alert.alert('Error', response.message || 'Failed to analyze and sync mood data.');
+      }
     } catch (err) {
-      setError(err.message || 'Failed to analyze mood.');
+      setError('An unexpected error occurred during mood analysis.');
+      Alert.alert('Error', 'An unexpected error occurred during mood analysis.');
+      console.error('Handle analyze mood error:', err);
     } finally {
-      setIsLoading(false);
+      setIsLoadingAnalysis(false);
     }
   };
 
   const handleClearHistory = async () => {
-    setIsLoading(true); // Use main loading indicator for simplicity
-    try {
-      await clearAllMoodHistory();
-      fetchMoodHistory(); // Refresh history
-    } catch (err) {
-      console.error("DashboardScreen: Failed to clear history", err);
-      setError("Failed to clear mood history.");
-    } finally {
-      setIsLoading(false);
-    }
+    // This now only clears local cache, which might not be relevant if backend is source of truth
+    // For a real "clear server history", a backend endpoint would be needed.
+    Alert.alert(
+      "Confirm Clear",
+      "This will clear only the locally cached history (if any). Server history will remain. Proceed?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "OK", onPress: async () => {
+            setIsLoadingHistory(true); // Indicate activity
+            const response = await dataService.clearAllMoodHistory(); // Clears local
+            if(response.success) {
+              setMoodHistory([]); // Clear displayed history
+              setCurrentMoodAnalysis(null); // Clear current analysis display
+              setHistoryPage(1);
+              setTotalHistoryPages(1);
+              Alert.alert('Local Cache Cleared', 'Locally cached mood history has been cleared.');
+            } else {
+              Alert.alert('Error', response.message || 'Failed to clear local cache.');
+            }
+            setIsLoadingHistory(false);
+          }
+        }
+      ]
+    );
   };
 
-  const renderHistoryItem = ({item}) => (
-    <View style={styles.historyItemContainer}>
-      <Text style={styles.historyItemDate}>
-        {item.date ? (new Date(item.date).toLocaleDateString() + ' ' + new Date(item.date).toLocaleTimeString()) : `ID: ${item.id}`}
+  const renderHistoryItem = ({ item }) => (
+    <View style={styles.historyItem}>
+      <Text style={styles.historyDate}>
+        {new Date(item.date || item.id).toLocaleDateString()} {new Date(item.date || item.id).toLocaleTimeString()}
       </Text>
-      <Text style={styles.historyItemMood}>Primary Mood: {item.primaryMood}</Text>
-      <Text style={styles.historyItemSummary}>Summary: {item.summary}</Text>
+      <Text>Mood: {item.primaryMood}</Text>
+      {item.summary ? <Text>Summary: {item.summary}</Text> : null}
+      {item.shareablePost ? <Text>Post: {item.shareablePost}</Text> : null}
+      {/* Display other fields from item (e.g. item.aiGenerated.insights) as needed */}
     </View>
   );
 
+  const loadMoreHistory = () => {
+    if (historyPage < totalHistoryPages && !isLoadingHistory) {
+      fetchMoodHistory(historyPage + 1);
+    }
+  };
+
   return (
-    <ScrollView style={styles.scrollViewContainer}>
+    <ScrollView style={styles.scrollView}>
       <View style={styles.container}>
-        <Text style={styles.title}>Daily Mood Dashboard</Text>
+        <Text style={styles.title}>Dashboard</Text>
 
-        <View style={styles.buttonContainer}>
-          <Button title="Analyze Today's Mood" onPress={handleAnalyzeMood} disabled={isLoading} />
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+        <Button
+          title={isLoadingAnalysis ? "Analyzing & Syncing..." : "Analyze & Sync Today's Mood"}
+          onPress={handleAnalyzeTodaysMood}
+          disabled={isLoadingAnalysis || isLoadingHistory}
+        />
+
+        {isLoadingAnalysis && <ActivityIndicator style={styles.inlineLoader} size="small" color="#0000ff" />}
+
+        {currentMoodAnalysis && (
+          <View style={styles.currentAnalysisSection}>
+            <Text style={styles.sectionTitle}>Last Synced Analysis ({new Date(currentMoodAnalysis.date).toLocaleDateString()}):</Text>
+            <Text>Mood: {currentMoodAnalysis.primaryMood}</Text>
+            {currentMoodAnalysis.summary && <Text>Summary: {currentMoodAnalysis.summary}</Text>}
+            {/* Display more from currentMoodAnalysis as desired */}
+          </View>
+        )}
+
+        <View style={styles.historySection}>
+          <Text style={styles.sectionTitle}>Mood History (from Server)</Text>
+          {isLoadingHistory && historyPage === 1 && <ActivityIndicator style={styles.fullPageLoader} size="large" color="#0000ff" />}
+          <FlatList
+            data={moodHistory}
+            renderItem={renderHistoryItem}
+            keyExtractor={(item) => item._id || item.id} // Use _id from MongoDB if available
+            ListEmptyComponent={!isLoadingHistory ? <Text style={styles.emptyHistoryText}>No mood history found.</Text> : null}
+            onEndReached={loadMoreHistory}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={isLoadingHistory && historyPage > 1 ? <ActivityIndicator style={styles.inlineLoader} size="small" /> : null}
+            // To prevent ScrollView vs FlatList issues, FlatList shouldn't be nested in a ScrollView
+            // with the same orientation unless the ScrollView is explicitly non-scrollable or FlatList has fixed height.
+            // For now, assuming content won't be excessive or will be managed.
+            // A better approach for very long lists is to remove the outer ScrollView if FlatList handles all scrolling.
+          />
         </View>
-
-        {isLoading && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#0000ff" />
-            <Text style={styles.loadingText}>Analyzing mood...</Text>
-          </View>
-        )}
-
-        {error && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>Error: {error}</Text>
-          </View>
-        )}
-
-        {moodAnalysis && !isLoading && (
-          <View style={styles.resultsContainer}>
-            <Text style={styles.resultsTitle}>Current Mood Analysis:</Text>
-            <Text style={styles.resultText}>Primary Mood: {moodAnalysis.primaryMood}</Text>
-            <Text style={styles.resultText}>Summary: {moodAnalysis.summary}</Text>
-            <Text style={styles.resultText}>Shareable Post: "{moodAnalysis.shareablePost}"</Text>
-            {moodAnalysis.insights && moodAnalysis.insights.length > 0 && (
-              <View style={styles.insightsContainer}>
-                <Text style={styles.insightsTitle}>Insights:</Text>
-                {moodAnalysis.insights.map((insight, index) => (
-                  <Text key={index} style={styles.insightText}>- {insight}</Text>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
-        <View style={styles.historySectionContainer}>
-          <Text style={styles.historyTitle}>Mood History</Text>
-          {isHistoryLoading ? (
-            <ActivityIndicator size="small" color="#0000ff" />
-          ) : moodHistory.length === 0 ? (
-            <Text style={styles.noHistoryText}>No mood history yet.</Text>
-          ) : (
-            <FlatList
-              data={moodHistory}
-              renderItem={renderHistoryItem}
-              keyExtractor={item => item.id}
-              style={styles.historyList}
-              // Nested FlatLists/ScrollViews can be tricky. Ensure parent ScrollView is set up.
-              // If performance issues, consider fixed height for FlatList or other optimizations.
-            />
-          )}
-           <View style={styles.clearButtonContainer}>
-            <Button title="Clear All History" onPress={handleClearHistory} disabled={isLoading} color="red" />
-          </View>
+         <View style={styles.clearButtonContainer}>
+          <Button title="Clear Local History Cache" onPress={handleClearHistory} color="red" disabled={isLoadingAnalysis || isLoadingHistory} />
         </View>
       </View>
     </ScrollView>
@@ -134,140 +170,81 @@ const DashboardScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  scrollViewContainer: {
+  scrollView: {
     flex: 1,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: '#f8f8f8', // Light background for the scrollable area
   },
   container: {
-    flex: 1, // This flex might not be strictly needed if ScrollView is the top container for actual content display
-    padding: 20,
-    alignItems: 'center',
-    // backgroundColor: '#f7f7f7', // Moved to ScrollView
+    flex: 1, // Ensure container tries to fill ScrollView, useful if ScrollView has minHeight or similar
+    padding: 15, // Slightly reduced padding
   },
   title: {
-    fontSize: 22,
+    fontSize: 26, // Slightly larger title
     fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#333',
-  },
-  buttonContainer: {
-    width: '80%',
-    marginBottom: 10, // Reduced margin
-  },
-  clearButtonContainer: {
-    width: '80%',
-    marginTop: 15,
-    marginBottom: 10,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#555',
-  },
-  errorContainer: {
-    marginVertical: 15,
-    padding: 10,
-    backgroundColor: '#ffebee',
-    borderRadius: 8,
-    width: '90%',
-    alignItems: 'center',
-  },
-  errorText: {
-    color: '#c62828',
-    fontSize: 16,
     textAlign: 'center',
-  },
-  resultsContainer: {
-    marginTop: 10, // Reduced margin
     marginBottom: 20,
+    color: '#333', // Darker text for better contrast
+  },
+  sectionTitle: {
+    fontSize: 20, // Consistent section title size
+    fontWeight: '600', // Semi-bold
+    marginTop: 20,
+    marginBottom: 10,
+    color: '#444',
+  },
+  currentAnalysisSection: {
     padding: 15,
-    backgroundColor: '#ffffff',
+    marginVertical:10,
+    backgroundColor: '#ffffff', // White background for cards
     borderRadius: 8,
-    width: '95%', // Adjusted width
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.2,
+    borderWidth: 1,
+    borderColor: '#e0e0e0', // Light border
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.20,
     shadowRadius: 1.41,
     elevation: 2,
   },
-  resultsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#2c3e50',
+  historySection: {
+    marginTop: 15, // Adjusted margin
+    marginBottom: 20, // Added margin at the bottom
   },
-  resultText: {
-    fontSize: 16,
-    marginBottom: 8,
-    color: '#34495e',
-    lineHeight: 22,
-  },
-  insightsContainer: {
-    marginTop: 10,
-    paddingLeft: 10,
-  },
-  insightsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 5,
-    color: '#2980b9',
-  },
-  insightText: {
-    fontSize: 14,
-    marginBottom: 3,
-    color: '#3498db',
-  },
-  historySectionContainer: {
-    marginTop: 20,
-    width: '95%',
-    alignItems: 'center', // Center title and FlatList content if needed
-  },
-  historyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#333',
-  },
-  noHistoryText: {
-    fontSize: 16,
-    fontStyle: 'italic',
-    color: '#777',
-    marginTop: 10,
-  },
-  historyList: {
-    width: '100%', // Ensure FlatList takes available width
-  },
-  historyItemContainer: {
+  historyItem: {
     padding: 12,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#e7e7e7', // Lighter separator
     borderRadius: 6,
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 1.0,
-    elevation: 1,
   },
-  historyItemDate: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  historyItemMood: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#333',
-    marginBottom: 3,
-  },
-  historyItemSummary: {
+  historyDate: {
     fontSize: 13,
-    color: '#555',
+    color: '#555', // Darker gray for date
+    marginBottom: 5,
+  },
+  errorText: {
+    color: 'red',
+    textAlign: 'center',
+    marginBottom: 10,
+    fontSize: 14, // Slightly smaller error text
+  },
+  inlineLoader: {
+    marginVertical: 10,
+  },
+  fullPageLoader: { // For initial history load
+    marginVertical: 30,
+  },
+  emptyHistoryText: {
+    textAlign: 'center',
+    marginTop: 20,
+    fontSize: 16,
+    color: '#777',
+  },
+  clearButtonContainer: {
+    marginTop: 10, // Add some space before the clear button
   }
 });
 
