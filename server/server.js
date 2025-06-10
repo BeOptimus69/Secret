@@ -24,6 +24,10 @@ app.get('/api/test', (req, res) => {
 const authRoutes = require('./routes/authRoutes');
 app.use('/api/auth', authRoutes);
 
+// Mood routes
+const moodRoutes = require('./routes/moodRoutes');
+app.use('/api/moods', moodRoutes);
+
 const PORT = process.env.PORT || 5001; // Default to 5001 if PORT not in .env
 
 app.listen(PORT, () => {
