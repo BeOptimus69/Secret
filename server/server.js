@@ -28,6 +28,10 @@ app.use('/api/auth', authRoutes);
 const moodRoutes = require('./routes/moodRoutes');
 app.use('/api/moods', moodRoutes);
 
+// Friend routes
+const friendRoutes = require('./routes/friendRoutes.js');
+app.use('/api/friends', friendRoutes);
+
 const PORT = process.env.PORT || 5001; // Default to 5001 if PORT not in .env
 
 app.listen(PORT, () => {
