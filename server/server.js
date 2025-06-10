@@ -32,6 +32,10 @@ app.use('/api/moods', moodRoutes);
 const friendRoutes = require('./routes/friendRoutes.js');
 app.use('/api/friends', friendRoutes);
 
+// Social routes
+const socialRoutes = require('./routes/socialRoutes.js');
+app.use('/api/social', socialRoutes);
+
 const PORT = process.env.PORT || 5001; // Default to 5001 if PORT not in .env
 
 app.listen(PORT, () => {
